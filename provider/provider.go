@@ -1,30 +1,28 @@
-package modules
+// ./provider/provider.go
+package provider
 
 import (
 	"context"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-)
 
-type providerConfig struct {
-	username string
-	password string
-	url      string
-}
+	"hcloud-robot-provider/data_sources"
+	"hcloud-robot-provider/resources"
+	"hcloud-robot-provider/shared"
+)
 
 func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"username": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("HETZNERROBOT_USERNAME", nil),
+				Type:     schema.TypeString,
+				Required: true,
 			},
 			"password": {
-				Type:        schema.TypeString,
-				Optional:    true,
-				DefaultFunc: schema.EnvDefaultFunc("HETZNERROBOT_PASSWORD", nil),
+				Type:      schema.TypeString,
+				Required:  true,
+				Sensitive: true,
 			},
 			"url": {
 				Type:        schema.TypeString,
@@ -33,36 +31,36 @@ func Provider() *schema.Provider {
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"hetzner-robot_server_bulk":     resourceTPServerBulk(),
-			"hetzner-robot_talos_installer": resourceTalosInstaller(),
-			"hetzner-robot_firewall":        resourceFirewall(),
+			"hetznerrobot_vswitch": resources.ResourceVSwitch(),
 		},
 		DataSourcesMap: map[string]*schema.Resource{
-			"hetzner-robot_servers": dataSourceServers(),
+			"hetznerrobot_server": data_sources.DataSourceServers(),
 		},
 		ConfigureContextFunc: providerConfigure,
 	}
 }
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
+	var diags diag.Diagnostics
+
 	username := d.Get("username").(string)
 	password := d.Get("password").(string)
 	url := d.Get("url").(string)
 
-	var diags diag.Diagnostics
-
 	if username == "" || password == "" {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
-			Summary:  "Missing required configuration",
+			Summary:  "Missing credentials",
 			Detail:   "Both username and password must be provided.",
 		})
 		return nil, diags
 	}
 
-	return &providerConfig{
-		username: username,
-		password: password,
-		url:      url,
-	}, diags
+	config := &shared.ProviderConfig{
+		Username: username,
+		Password: password,
+		URL:      url,
+	}
+
+	return config, diags
 }
