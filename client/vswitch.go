@@ -5,12 +5,39 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
+	"net/url"
+	"strings"
 )
 
+func (c *HetznerRobotClient) DoRequest(method, path string, body io.Reader, contentType string) (*http.Response, error) {
+	req, err := http.NewRequest(method, fmt.Sprintf("%s%s", c.config.URL, path), body)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	req.SetBasicAuth(c.config.Username, c.config.Password)
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
+	}
+
+	return resp, nil
+}
+
 func (c *HetznerRobotClient) CreateVSwitch(name string, vlan int) (*VSwitch, error) {
-	form := fmt.Sprintf("name=%s&vlan=%d", name, vlan)
-	reqBody := bytes.NewBufferString(form)
+	data := url.Values{}
+	data.Set("name", name)
+	data.Set("vlan", fmt.Sprintf("%d", vlan))
+
+	log.Printf("[DEBUG] Creating VSwitch with data: %s", data.Encode())
+
+	reqBody := strings.NewReader(data.Encode())
 	resp, err := c.DoRequest("POST", "/vswitch", reqBody, "application/x-www-form-urlencoded")
 	if err != nil {
 		return nil, fmt.Errorf("error creating VSwitch: %w", err)
@@ -38,7 +65,7 @@ func (c *HetznerRobotClient) GetVSwitchByID(id string) (*VSwitch, error) {
 	defer resp.Body.Close()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("VSwitch with ID %s not found", id)
+		return nil, NewNotFoundError(fmt.Sprintf("VSwitch with ID %s not found", id))
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -57,6 +84,7 @@ func (c *HetznerRobotClient) GetVSwitchByID(id string) (*VSwitch, error) {
 func (c *HetznerRobotClient) UpdateVSwitch(id, name string, vlan int) error {
 	form := fmt.Sprintf("name=%s&vlan=%d", name, vlan)
 	reqBody := bytes.NewBufferString(form)
+
 	resp, err := c.DoRequest("PUT", fmt.Sprintf("/vswitch/%s", id), reqBody, "application/x-www-form-urlencoded")
 	if err != nil {
 		return fmt.Errorf("error updating VSwitch: %w", err)

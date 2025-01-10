@@ -1,4 +1,3 @@
-// ./provider/provider.go
 package provider
 
 import (
@@ -34,7 +33,8 @@ func Provider() *schema.Provider {
 			"hetznerrobot_vswitch": resources.ResourceVSwitch(),
 		},
 		DataSourcesMap: map[string]*schema.Resource{
-			"hetznerrobot_server": data_sources.DataSourceServers(),
+			"hetznerrobot_server":  data_sources.DataSourceServers(),
+			"hetznerrobot_vswitch": data_sources.DataSourceVSwitches(),
 		},
 		ConfigureContextFunc: providerConfigure,
 	}

@@ -3,6 +3,7 @@ package data_sources
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -11,15 +12,14 @@ import (
 	"hcloud-robot-provider/shared"
 )
 
-// DataSourceServers defines the server data source for Terraform
 func DataSourceServers() *schema.Resource {
 	return &schema.Resource{
 		ReadContext: dataSourceServersRead,
 		Schema: map[string]*schema.Schema{
-			"id": {
+			"ids": {
 				Type:     schema.TypeList,
-				Elem:     &schema.Schema{Type: schema.TypeInt},
 				Required: true,
+				Elem:     &schema.Schema{Type: schema.TypeInt},
 			},
 			"servers": {
 				Type:     schema.TypeList,
@@ -44,10 +44,11 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 	}
 
 	api := client.NewHetznerRobotClient(config)
-	idsInterface := d.Get("id").([]interface{})
-	ids := make([]int, len(idsInterface))
-	for i, v := range idsInterface {
-		ids[i] = v.(int)
+
+	idsInterface := d.Get("ids").([]interface{})
+	var ids []int
+	for _, id := range idsInterface {
+		ids = append(ids, id.(int))
 	}
 
 	servers, err := api.FetchServersByIDs(ids)
@@ -69,6 +70,15 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.FromErr(err)
 	}
 
-	d.SetId("hcloudrobot-servers")
+	d.SetId(fmt.Sprintf("servers-%s", strings.Join(intSliceToStringSlice(ids), "-")))
+
 	return diag.Diagnostics{}
+}
+
+func intSliceToStringSlice(intSlice []int) []string {
+	stringSlice := make([]string, len(intSlice))
+	for i, val := range intSlice {
+		stringSlice[i] = fmt.Sprintf("%d", val)
+	}
+	return stringSlice
 }

@@ -1,8 +1,8 @@
 package client
 
 import (
-	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 
 	"hcloud-robot-provider/shared"
@@ -20,7 +20,7 @@ func NewHetznerRobotClient(config *shared.ProviderConfig) *HetznerRobotClient {
 	}
 }
 
-func (c *HetznerRobotClient) DoRequest(method, path string, body *bytes.Buffer, contentType string) (*http.Response, error) {
+func (c *HetznerRobotClient) DoRequest(method, path string, body io.Reader, contentType string) (*http.Response, error) {
 	if c.Client == nil || c.Config.URL == "" {
 		return nil, fmt.Errorf("client not properly configured")
 	}
