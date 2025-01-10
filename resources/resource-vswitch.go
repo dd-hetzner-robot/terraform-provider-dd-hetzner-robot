@@ -172,6 +172,8 @@ func resourceVSwitchRead(ctx context.Context, d *schema.ResourceData, meta inter
 }
 
 func resourceVSwitchUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	var _ diag.Diagnostics
+
 	config, ok := meta.(*shared.ProviderConfig)
 	if !ok {
 		return diag.Errorf("meta не является *shared.ProviderConfig")
@@ -204,7 +206,45 @@ func resourceVSwitchDelete(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.FromErr(fmt.Errorf("ошибка при удалении VSwitch: %w", err))
 	}
 
-	d.SetId("") // Удаляем ресурс из состояния Terraform
+	d.SetId("")
 
 	return diag.Diagnostics{}
+}
+
+func flattenVSwitchServers(servers []client.VSwitchServer) []map[string]interface{} {
+	var result []map[string]interface{}
+	for _, server := range servers {
+		result = append(result, map[string]interface{}{
+			"server_ip":       server.ServerIP,
+			"server_ipv6_net": server.ServerIPv6Net,
+			"server_number":   server.ServerNumber,
+			"status":          server.Status,
+		})
+	}
+	return result
+}
+
+func flattenVSwitchSubnets(subnets []client.VSwitchSubnet) []map[string]interface{} {
+	var result []map[string]interface{}
+	for _, subnet := range subnets {
+		result = append(result, map[string]interface{}{
+			"ip":      subnet.IP,
+			"mask":    subnet.Mask,
+			"gateway": subnet.Gateway,
+		})
+	}
+	return result
+}
+
+func flattenVSwitchCloudNetworks(cloudNetworks []client.VSwitchCloudNetwork) []map[string]interface{} {
+	var result []map[string]interface{}
+	for _, network := range cloudNetworks {
+		result = append(result, map[string]interface{}{
+			"id":      network.ID,
+			"ip":      network.IP,
+			"mask":    network.Mask,
+			"gateway": network.Gateway,
+		})
+	}
+	return result
 }
