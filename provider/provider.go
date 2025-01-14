@@ -2,12 +2,13 @@ package provider
 
 import (
 	"context"
+	"hcloud-robot-provider/data_sources"
+	"hcloud-robot-provider/resources"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
-	"hcloud-robot-provider/data_sources"
-	"hcloud-robot-provider/resources"
+	"hcloud-robot-provider/client"
 	"hcloud-robot-provider/shared"
 )
 
@@ -59,8 +60,9 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 	config := &shared.ProviderConfig{
 		Username: username,
 		Password: password,
-		URL:      url,
+		BaseURL:  url,
 	}
 
-	return config, diags
+	client := client.NewHetznerRobotClient(config)
+	return client, diags
 }

@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
 	"hcloud-robot-provider/client"
-	"hcloud-robot-provider/shared"
 )
 
 func DataSourceServers() *schema.Resource {
@@ -26,6 +25,7 @@ func DataSourceServers() *schema.Resource {
 				Computed: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
+						"id":     {Type: schema.TypeInt, Computed: true},
 						"ip":     {Type: schema.TypeString, Computed: true},
 						"name":   {Type: schema.TypeString, Computed: true},
 						"number": {Type: schema.TypeInt, Computed: true},
@@ -38,12 +38,10 @@ func DataSourceServers() *schema.Resource {
 }
 
 func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	config, ok := meta.(*shared.ProviderConfig)
+	client, ok := meta.(*client.HetznerRobotClient)
 	if !ok {
-		return diag.Errorf("meta is not of type *shared.ProviderConfig")
+		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
 	}
-
-	api := client.NewHetznerRobotClient(config)
 
 	idsInterface := d.Get("ids").([]interface{})
 	var ids []int
@@ -51,7 +49,7 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 		ids = append(ids, id.(int))
 	}
 
-	servers, err := api.FetchServersByIDs(ids)
+	servers, err := client.FetchServersByIDs(ids)
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to fetch servers: %w", err))
 	}
@@ -59,6 +57,7 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 	var serverList []map[string]interface{}
 	for _, server := range servers {
 		serverList = append(serverList, map[string]interface{}{
+			"id":     server.Number,
 			"ip":     server.IP,
 			"name":   server.Name,
 			"number": server.Number,
@@ -72,7 +71,7 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 
 	d.SetId(fmt.Sprintf("servers-%s", strings.Join(intSliceToStringSlice(ids), "-")))
 
-	return diag.Diagnostics{}
+	return nil
 }
 
 func intSliceToStringSlice(intSlice []int) []string {

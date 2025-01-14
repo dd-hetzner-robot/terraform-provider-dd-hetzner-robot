@@ -1,26 +1,12 @@
 package client
 
-type VSwitch struct {
-	ID            int                   `json:"id"`
-	Name          string                `json:"name"`
-	VLAN          int                   `json:"vlan"`
-	Cancelled     bool                  `json:"cancelled"`
-	Servers       []VSwitchServer       `json:"servers,omitempty"`
-	Subnets       []VSwitchSubnet       `json:"subnets,omitempty"`
-	CloudNetworks []VSwitchCloudNetwork `json:"cloud_networks,omitempty"`
-}
+import (
+	"hcloud-robot-provider/shared"
+	"net/http"
+)
 
-type VSwitchServer struct {
-	ServerIP      string `json:"server_ip"`
-	ServerIPv6Net string `json:"server_ipv6_net"`
-	ServerNumber  int    `json:"server_number"`
-	Status        string `json:"status"`
-}
-
-type VSwitchSubnet struct {
-	IP      string `json:"ip"`
-	Mask    int    `json:"mask"`
-	Gateway string `json:"gateway"`
+type NotFoundError struct {
+	Message string
 }
 
 type VSwitchCloudNetwork struct {
@@ -35,4 +21,39 @@ type Server struct {
 	Number int    `json:"server_number"`
 	Name   string `json:"server_name"`
 	Status string `json:"status"`
+}
+
+type HetznerRobotClient struct {
+	Config *shared.ProviderConfig
+	Client *http.Client
+}
+
+type VSwitch struct {
+	ID        int               `json:"id"`
+	Name      string            `json:"name"`
+	VLAN      int               `json:"vlan"`
+	Cancelled bool              `json:"cancelled"`
+	Servers   []VSwitchServer   `json:"servers"`
+	Subnets   []VSwitchSubnet   `json:"subnets"`
+	CloudNets []VSwitchCloudNet `json:"cloud_networks"`
+}
+
+type VSwitchServer struct {
+	ServerNumber  int    `json:"server_number,omitempty"`
+	ServerIP      string `json:"server_ip,omitempty"`
+	ServerIPv6Net string `json:"server_ipv6_net,omitempty"`
+	Status        string `json:"status,omitempty"`
+}
+
+type VSwitchSubnet struct {
+	IP      string `json:"ip"`
+	Mask    int    `json:"mask"`
+	Gateway string `json:"gateway"`
+}
+
+type VSwitchCloudNet struct {
+	ID      int    `json:"id"`
+	IP      string `json:"ip"`
+	Mask    int    `json:"mask"`
+	Gateway string `json:"gateway"`
 }

@@ -2,36 +2,33 @@ package client
 
 import (
 	"fmt"
+	"hcloud-robot-provider/shared"
 	"io"
 	"net/http"
-
-	"hcloud-robot-provider/shared"
 )
-
-type HetznerRobotClient struct {
-	Client *http.Client
-	Config *shared.ProviderConfig
-}
 
 func NewHetznerRobotClient(config *shared.ProviderConfig) *HetznerRobotClient {
 	return &HetznerRobotClient{
-		Client: &http.Client{},
 		Config: config,
+		Client: &http.Client{},
 	}
 }
 
 func (c *HetznerRobotClient) DoRequest(method, path string, body io.Reader, contentType string) (*http.Response, error) {
-	if c.Client == nil || c.Config.URL == "" {
-		return nil, fmt.Errorf("client not properly configured")
+	req, err := http.NewRequest(method, fmt.Sprintf("%s%s", c.Config.BaseURL, path), body)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
 	}
 
-	req, err := http.NewRequest(method, fmt.Sprintf("%s%s", c.Config.URL, path), body)
-	if err != nil {
-		return nil, err
-	}
 	req.SetBasicAuth(c.Config.Username, c.Config.Password)
 	if contentType != "" {
 		req.Header.Set("Content-Type", contentType)
 	}
-	return c.Client.Do(req)
+
+	resp, err := c.Client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making request: %w", err)
+	}
+
+	return resp, nil
 }
