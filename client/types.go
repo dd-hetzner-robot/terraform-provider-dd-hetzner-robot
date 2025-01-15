@@ -17,10 +17,16 @@ type VSwitchCloudNetwork struct {
 }
 
 type Server struct {
-	IP     string `json:"server_ip"`
-	Number int    `json:"server_number"`
-	Name   string `json:"server_name"`
-	Status string `json:"status"`
+	IP         string `json:"server_ip"`
+	IPv6Net    string `json:"server_ipv6_net"`
+	Number     int    `json:"server_number"`
+	Name       string `json:"server_name"`
+	Product    string `json:"product"`
+	Datacenter string `json:"dc"`
+	Traffic    string `json:"traffic"`
+	Status     string `json:"status"`
+	Cancelled  bool   `json:"cancelled"`
+	PaidUntil  string `json:"paid_until"`
 }
 
 type HetznerRobotClient struct {

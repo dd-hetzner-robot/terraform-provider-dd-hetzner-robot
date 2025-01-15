@@ -17,7 +17,7 @@ func DataSourceServers() *schema.Resource {
 		Schema: map[string]*schema.Schema{
 			"ids": {
 				Type:     schema.TypeList,
-				Required: true,
+				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeInt},
 			},
 			"servers": {
@@ -25,11 +25,16 @@ func DataSourceServers() *schema.Resource {
 				Computed: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"id":     {Type: schema.TypeInt, Computed: true},
-						"ip":     {Type: schema.TypeString, Computed: true},
-						"name":   {Type: schema.TypeString, Computed: true},
-						"number": {Type: schema.TypeInt, Computed: true},
-						"status": {Type: schema.TypeString, Computed: true},
+						"ip":         {Type: schema.TypeString, Computed: true},
+						"ipv6_net":   {Type: schema.TypeString, Computed: true},
+						"number":     {Type: schema.TypeInt, Computed: true},
+						"name":       {Type: schema.TypeString, Computed: true},
+						"product":    {Type: schema.TypeString, Computed: true},
+						"datacenter": {Type: schema.TypeString, Computed: true},
+						"traffic":    {Type: schema.TypeString, Computed: true},
+						"status":     {Type: schema.TypeString, Computed: true},
+						"cancelled":  {Type: schema.TypeBool, Computed: true},
+						"paid_until": {Type: schema.TypeString, Computed: true},
 					},
 				},
 			},
@@ -38,30 +43,46 @@ func DataSourceServers() *schema.Resource {
 }
 
 func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	client, ok := meta.(*client.HetznerRobotClient)
+	hClient, ok := meta.(*client.HetznerRobotClient)
 	if !ok {
-		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
+		return diag.Errorf("invalid client type")
 	}
 
-	idsInterface := d.Get("ids").([]interface{})
+	// Собираем переданные ID
+	rawIDs := d.Get("ids").([]interface{})
 	var ids []int
-	for _, id := range idsInterface {
-		ids = append(ids, id.(int))
+	for _, v := range rawIDs {
+		ids = append(ids, v.(int))
 	}
 
-	servers, err := client.FetchServersByIDs(ids)
+	// Берём либо все сервера, либо по списку ID
+	var (
+		servers []client.Server
+		err     error
+	)
+	if len(ids) == 0 {
+		servers, err = hClient.FetchAllServers()
+	} else {
+		servers, err = hClient.FetchServersByIDs(ids)
+	}
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to fetch servers: %w", err))
 	}
 
-	var serverList []map[string]interface{}
-	for _, server := range servers {
+	// Складываем данные в список
+	serverList := make([]map[string]interface{}, 0, len(servers))
+	for _, s := range servers {
 		serverList = append(serverList, map[string]interface{}{
-			"id":     server.Number,
-			"ip":     server.IP,
-			"name":   server.Name,
-			"number": server.Number,
-			"status": server.Status,
+			"ip":         s.IP,
+			"ipv6_net":   s.IPv6Net,
+			"number":     s.Number,
+			"name":       s.Name,
+			"product":    s.Product,
+			"datacenter": s.Datacenter,
+			"traffic":    s.Traffic,
+			"status":     s.Status,
+			"cancelled":  s.Cancelled,
+			"paid_until": s.PaidUntil,
 		})
 	}
 
@@ -69,15 +90,19 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.FromErr(err)
 	}
 
-	d.SetId(fmt.Sprintf("servers-%s", strings.Join(intSliceToStringSlice(ids), "-")))
-
+	// Формируем ID ресурса
+	idStr := "all"
+	if len(ids) > 0 {
+		idStr = strings.Join(intSliceToStringSlice(ids), "-")
+	}
+	d.SetId(fmt.Sprintf("servers-%s", idStr))
 	return nil
 }
 
-func intSliceToStringSlice(intSlice []int) []string {
-	stringSlice := make([]string, len(intSlice))
-	for i, val := range intSlice {
-		stringSlice[i] = fmt.Sprintf("%d", val)
+func intSliceToStringSlice(ints []int) []string {
+	out := make([]string, len(ints))
+	for i, v := range ints {
+		out[i] = fmt.Sprintf("%d", v)
 	}
-	return stringSlice
+	return out
 }
