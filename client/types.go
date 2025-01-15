@@ -63,3 +63,30 @@ type VSwitchCloudNet struct {
 	Mask    int    `json:"mask"`
 	Gateway string `json:"gateway"`
 }
+
+// HetznerRobotFirewallResponse Firewall types
+type HetznerRobotFirewallResponse struct {
+	Firewall HetznerRobotFirewall `json:"firewall"`
+}
+
+type HetznerRobotFirewall struct {
+	IP                       string                    `json:"server_ip"`
+	WhitelistHetznerServices bool                      `json:"whitelist_hos"`
+	Status                   string                    `json:"status"`
+	Rules                    HetznerRobotFirewallRules `json:"rules"`
+}
+
+type HetznerRobotFirewallRules struct {
+	Input []HetznerRobotFirewallRule `json:"input"`
+}
+
+type HetznerRobotFirewallRule struct {
+	Name     string `json:"name"`
+	DstIP    string `json:"dst_ip"`
+	DstPort  string `json:"dst_port"`
+	SrcIP    string `json:"src_ip"`
+	SrcPort  string `json:"src_port"`
+	Protocol string `json:"protocol"`
+	TCPFlags string `json:"tcp_flags"`
+	Action   string `json:"action"`
+}

@@ -48,14 +48,12 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.Errorf("invalid client type")
 	}
 
-	// Собираем переданные ID
 	rawIDs := d.Get("ids").([]interface{})
 	var ids []int
 	for _, v := range rawIDs {
 		ids = append(ids, v.(int))
 	}
 
-	// Берём либо все сервера, либо по списку ID
 	var (
 		servers []client.Server
 		err     error
@@ -90,7 +88,6 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 		return diag.FromErr(err)
 	}
 
-	// Формируем ID ресурса
 	idStr := "all"
 	if len(ids) > 0 {
 		idStr = strings.Join(intSliceToStringSlice(ids), "-")

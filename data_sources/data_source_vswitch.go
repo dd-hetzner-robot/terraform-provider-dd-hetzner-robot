@@ -10,7 +10,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 
 	"hcloud-robot-provider/client"
-	"hcloud-robot-provider/shared"
 )
 
 func DataSourceVSwitches() *schema.Resource {
@@ -20,7 +19,7 @@ func DataSourceVSwitches() *schema.Resource {
 			"ids": {
 				Type:     schema.TypeList,
 				Elem:     &schema.Schema{Type: schema.TypeString},
-				Required: true,
+				Optional: true,
 			},
 			"vswitches": {
 				Type:     schema.TypeList,
@@ -55,14 +54,10 @@ func DataSourceVSwitches() *schema.Resource {
 }
 
 func dataSourceVSwitchesRead(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-
-	config, ok := meta.(*shared.ProviderConfig)
+	hClient, ok := meta.(*client.HetznerRobotClient)
 	if !ok {
-		return diag.Errorf("meta is not of type *shared.ProviderConfig")
+		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
 	}
-
-	api := client.NewHetznerRobotClient(config)
 
 	idsInterface := d.Get("ids").([]interface{})
 	var ids []string
@@ -71,20 +66,20 @@ func dataSourceVSwitchesRead(ctx context.Context, d *schema.ResourceData, meta i
 	}
 
 	var (
-		foundIDs  []string
 		vswitches []client.VSwitch
+		err       error
 	)
 
-	for _, id := range ids {
-		vswitch, err := api.FetchVSwitchByIDWithContext(ctx, id)
+	if len(ids) == 0 {
+		vswitches, err = hClient.FetchAllVSwitches(ctx)
 		if err != nil {
-			if strings.Contains(err.Error(), "not found") {
-				continue
-			}
-			return diag.FromErr(fmt.Errorf("error reading VSwitch with ID %s: %w", id, err))
+			return diag.FromErr(fmt.Errorf("error fetching ALL vSwitches: %w", err))
 		}
-		vswitches = append(vswitches, *vswitch)
-		foundIDs = append(foundIDs, id)
+	} else {
+		vswitches, err = hClient.FetchVSwitchesByIDs(ids)
+		if err != nil {
+			return diag.FromErr(fmt.Errorf("error fetching vSwitches by IDs: %w", err))
+		}
 	}
 
 	if len(vswitches) == 0 {
@@ -100,26 +95,30 @@ func dataSourceVSwitchesRead(ctx context.Context, d *schema.ResourceData, meta i
 		if err := d.Set("vswitches", placeholder); err != nil {
 			return diag.FromErr(err)
 		}
-		return diags
+		return nil
 	}
 
-	d.SetId(fmt.Sprintf("vswitches-%s", strings.Join(foundIDs, "-")))
 	if err := d.Set("vswitches", flattenVSwitches(vswitches)); err != nil {
 		return diag.FromErr(err)
 	}
 
-	return diags
+	idStr := "all"
+	if len(ids) > 0 {
+		idStr = strings.Join(ids, "-")
+	}
+	d.SetId(fmt.Sprintf("vswitches-%s", idStr))
+	return nil
 }
 
 func flattenVSwitches(vswitches []client.VSwitch) []map[string]interface{} {
-	var result []map[string]interface{}
-	for _, vswitch := range vswitches {
-		result = append(result, map[string]interface{}{
-			"id":        strconv.Itoa(vswitch.ID),
-			"name":      vswitch.Name,
-			"vlan":      vswitch.VLAN,
-			"cancelled": vswitch.Cancelled,
+	res := make([]map[string]interface{}, 0, len(vswitches))
+	for _, vs := range vswitches {
+		res = append(res, map[string]interface{}{
+			"id":        strconv.Itoa(vs.ID),
+			"name":      vs.Name,
+			"vlan":      vs.VLAN,
+			"cancelled": vs.Cancelled,
 		})
 	}
-	return result
+	return res
 }

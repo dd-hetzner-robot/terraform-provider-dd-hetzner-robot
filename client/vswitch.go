@@ -89,6 +89,25 @@ func (c *HetznerRobotClient) FetchVSwitchesByIDs(ids []string) ([]VSwitch, error
 	return vswitches, nil
 }
 
+func (c *HetznerRobotClient) FetchAllVSwitches(ctx context.Context) ([]VSwitch, error) {
+	resp, err := c.DoRequest("GET", "/vswitch", nil, "")
+	if err != nil {
+		return nil, fmt.Errorf("error fetching all vSwitches: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		bodyBytes, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("error fetching vSwitches: status %d, body %s", resp.StatusCode, string(bodyBytes))
+	}
+
+	var vswitches []VSwitch
+	if err := json.NewDecoder(resp.Body).Decode(&vswitches); err != nil {
+		return nil, fmt.Errorf("error decoding vSwitches: %w", err)
+	}
+	return vswitches, nil
+}
+
 func (c *HetznerRobotClient) CreateVSwitch(ctx context.Context, name string, vlan int) (*VSwitch, error) {
 	data := url.Values{}
 	data.Set("name", name)
