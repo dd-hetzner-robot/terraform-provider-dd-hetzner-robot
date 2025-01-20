@@ -9,13 +9,16 @@ import (
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"hcloud-robot-provider/client"
+	"hcloud-robot-provider/helpers"
 )
 
+// ServerInput структура для работы со списком серверов
 type ServerInput struct {
 	ID   string
 	Name string
 }
 
+// expandServerList парсит список серверов из terraform конфигурации
 func expandServerList(raw []interface{}) []ServerInput {
 	servers := make([]ServerInput, len(raw))
 	for i, r := range raw {
@@ -28,6 +31,7 @@ func expandServerList(raw []interface{}) []ServerInput {
 	return servers
 }
 
+// ResourceBootInstaller определяет terraform-ресурс
 func ResourceBootInstaller() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceBootInstallerCreate,
@@ -106,11 +110,35 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 			time.Sleep(10 * time.Second)
 			cfg.ResetServer(ctx, serverID, "hw")
 
+			ip := rescueResponse.Rescue.ServerIP
+			password := rescueResponse.Rescue.Password
+
+			if err := helpers.WaitForServer(ip, 22, 5*time.Minute); err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("server %s is not accessible: %v", ip, err)...)
+				mu.Unlock()
+				return
+			}
+
+			sshConfig := helpers.SSHConfig{
+				Host:     ip,
+				Port:     22,
+				User:     "root",
+				Password: password,
+			}
+
+			if err := helpers.CreateDirectory(sshConfig, "/123"); err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("failed to create directory on server %s: %v", ip, err)...)
+				mu.Unlock()
+				return
+			}
+
 			mu.Lock()
 			results = append(results, map[string]interface{}{
 				"id":       srv.ID,
-				"ip":       rescueResponse.Rescue.ServerIP,
-				"password": rescueResponse.Rescue.Password,
+				"ip":       ip,
+				"password": password,
 			})
 			mu.Unlock()
 
