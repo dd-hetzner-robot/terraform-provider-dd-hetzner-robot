@@ -7,6 +7,8 @@ import (
 	"io"
 	"net/url"
 	"strings"
+
+	"golang.org/x/crypto/ssh"
 )
 
 func (c *HetznerRobotClient) ResetServer(ctx context.Context, serverID int, resetType string) (*HetznerResetResponse, error) {
@@ -86,4 +88,53 @@ func (c *HetznerRobotClient) RenameServer(ctx context.Context, serverID int, new
 	}
 
 	return &renameResp, nil
+}
+
+func (c *HetznerRobotClient) InstallTalosOS(ctx context.Context, serverIP, password string) error {
+	sshConfig := &ssh.ClientConfig{
+		User:            "root",
+		Auth:            []ssh.AuthMethod{ssh.Password(password)},
+		HostKeyCallback: ssh.InsecureIgnoreHostKey(),
+	}
+
+	conn, err := ssh.Dial("tcp", fmt.Sprintf("%s:22", serverIP), sshConfig)
+	if err != nil {
+		return fmt.Errorf("failed to SSH to %s: %w", serverIP, err)
+	}
+	defer conn.Close()
+
+	session, err := conn.NewSession()
+	if err != nil {
+		return fmt.Errorf("failed to create SSH session: %w", err)
+	}
+	defer session.Close()
+
+	script := `#!/usr/bin/env bash
+set -eux
+
+mdadm --stop /dev/md0 || true
+mdadm --remove /dev/md0 || true
+mdadm --zero-superblock /dev/nvme0n1 /dev/nvme1n1 || true
+
+wipefs --all --force /dev/nvme0n1
+wipefs --all --force /dev/nvme1n1
+
+dd if=/dev/zero of=/dev/nvme0n1 bs=1M count=10 || true
+dd if=/dev/zero of=/dev/nvme1n1 bs=1M count=10 || true
+
+wget https://factory.talos.dev/image/3531bf15c8738b4bc46f2cdd7c5cd68fea388796b291117f0ee38b51a335fc47/v1.9.2/metal-amd64.raw.zst -O talos.raw.zst
+zstd -d talos.raw.zst -o talos.raw
+
+dd if=talos.raw of=/dev/nvme0n1 bs=4M status=progress
+sync
+
+reboot
+`
+
+	output, err := session.CombinedOutput(script)
+	if err != nil {
+		return fmt.Errorf("failed to run Talos install script on %s: %s\nerror: %w",
+			serverIP, string(output), err)
+	}
+	return nil
 }

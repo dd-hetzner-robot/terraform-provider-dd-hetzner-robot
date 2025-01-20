@@ -94,6 +94,7 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 	cfg := meta.(*client.HetznerRobotClient)
 	rawServers := d.Get("servers").([]interface{})
 	servers := expandServerList(rawServers)
+
 	rescueOS := d.Get("rescue_os").(string)
 
 	sshKeysRaw := d.Get("ssh_keys").([]interface{})
@@ -102,10 +103,12 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 		sshKeys = append(sshKeys, key.(string))
 	}
 
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	var results []map[string]interface{}
-	var diags diag.Diagnostics
+	var (
+		wg      sync.WaitGroup
+		mu      sync.Mutex
+		results []map[string]interface{}
+		diags   diag.Diagnostics
+	)
 
 	for _, srv := range servers {
 		wg.Add(1)
@@ -113,9 +116,16 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 		go func(srv ServerInput) {
 			defer wg.Done()
 
-			serverID, _ := strconv.Atoi(srv.ID)
+			serverID, err := strconv.Atoi(srv.ID)
+			if err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("invalid server ID %s: %v", srv.ID, err)...)
+				mu.Unlock()
+				return
+			}
 
-			_, err := cfg.RenameServer(ctx, serverID, srv.Name)
+			// Переименовываем сервер
+			_, err = cfg.RenameServer(ctx, serverID, srv.Name)
 			if err != nil {
 				mu.Lock()
 				diags = append(diags, diag.Errorf("failed to rename server %d: %v", serverID, err)...)
@@ -123,7 +133,8 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				return
 			}
 
-			rescueResponse, err := cfg.EnableRescueMode(ctx, serverID, rescueOS, sshKeys)
+			// Включаем rescue-режим
+			rescueResp, err := cfg.EnableRescueMode(ctx, serverID, rescueOS, sshKeys)
 			if err != nil {
 				mu.Lock()
 				diags = append(diags, diag.Errorf("failed to enable rescue mode for server %d: %v", serverID, err)...)
@@ -135,21 +146,28 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 			time.Sleep(10 * time.Second)
 			cfg.ResetServer(ctx, serverID, "hw")
 
-			ip := rescueResponse.Rescue.ServerIP
-			password := rescueResponse.Rescue.Password
+			// Устанавливаем Talos OS по SSH
+			ip := rescueResp.Rescue.ServerIP
+			pass := rescueResp.Rescue.Password
+			if err := cfg.InstallTalosOS(ctx, ip, pass); err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("failed to install Talos OS on server %d: %v", serverID, err)...)
+				mu.Unlock()
+				return
+			}
 
 			mu.Lock()
 			results = append(results, map[string]interface{}{
 				"id":       srv.ID,
 				"ip":       ip,
-				"password": password,
+				"password": pass,
 			})
 			mu.Unlock()
-
 		}(srv)
 	}
 
 	wg.Wait()
+
 	d.SetId("talos-installer")
 	d.Set("results", results)
 
