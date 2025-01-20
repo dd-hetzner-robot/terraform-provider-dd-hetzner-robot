@@ -32,9 +32,8 @@ func ResourceBootInstaller() *schema.Resource {
 	return &schema.Resource{
 		CreateContext: resourceBootInstallerCreate,
 		ReadContext:   schema.NoopContext,
-		UpdateContext: schema.NoopContext,
-		DeleteContext: schema.NoopContext,
-
+		UpdateContext: resourceBootInstallerUpdate,
+		DeleteContext: resourceBootInstallerDelete,
 		Schema: map[string]*schema.Schema{
 			"servers": {
 				Type:        schema.TypeList,
@@ -42,8 +41,15 @@ func ResourceBootInstaller() *schema.Resource {
 				Description: "List of servers",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"id":   {Type: schema.TypeString, Required: true},
-						"name": {Type: schema.TypeString, Required: true},
+						"id": {
+							Type:     schema.TypeString,
+							Required: true,
+						},
+						"name": {
+							Type:     schema.TypeString,
+							Required: true,
+							ForceNew: false,
+						},
 					},
 				},
 			},
@@ -80,9 +86,18 @@ func ResourceBootInstaller() *schema.Resource {
 				Computed: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"id":       {Type: schema.TypeString, Computed: true},
-						"ip":       {Type: schema.TypeString, Computed: true},
-						"password": {Type: schema.TypeString, Computed: true},
+						"id": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"ip": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"password": {
+							Type:     schema.TypeString,
+							Computed: true,
+						},
 					},
 				},
 			},
@@ -94,28 +109,22 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 	cfg := meta.(*client.HetznerRobotClient)
 	rawServers := d.Get("servers").([]interface{})
 	servers := expandServerList(rawServers)
-
 	rescueOS := d.Get("rescue_os").(string)
-
 	sshKeysRaw := d.Get("ssh_keys").([]interface{})
 	var sshKeys []string
 	for _, key := range sshKeysRaw {
 		sshKeys = append(sshKeys, key.(string))
 	}
-
 	var (
 		wg      sync.WaitGroup
 		mu      sync.Mutex
 		results []map[string]interface{}
 		diags   diag.Diagnostics
 	)
-
 	for _, srv := range servers {
 		wg.Add(1)
-
 		go func(srv ServerInput) {
 			defer wg.Done()
-
 			serverID, err := strconv.Atoi(srv.ID)
 			if err != nil {
 				mu.Lock()
@@ -123,8 +132,6 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				mu.Unlock()
 				return
 			}
-
-			// Переименовываем сервер
 			_, err = cfg.RenameServer(ctx, serverID, srv.Name)
 			if err != nil {
 				mu.Lock()
@@ -132,8 +139,6 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				mu.Unlock()
 				return
 			}
-
-			// Включаем rescue-режим
 			rescueResp, err := cfg.EnableRescueMode(ctx, serverID, rescueOS, sshKeys)
 			if err != nil {
 				mu.Lock()
@@ -141,12 +146,9 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				mu.Unlock()
 				return
 			}
-
 			cfg.ResetServer(ctx, serverID, "hw")
 			time.Sleep(10 * time.Second)
 			cfg.ResetServer(ctx, serverID, "hw")
-
-			// Устанавливаем Talos OS по SSH
 			ip := rescueResp.Rescue.ServerIP
 			pass := rescueResp.Rescue.Password
 			if err := cfg.InstallTalosOS(ctx, ip, pass); err != nil {
@@ -155,7 +157,6 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				mu.Unlock()
 				return
 			}
-
 			mu.Lock()
 			results = append(results, map[string]interface{}{
 				"id":       srv.ID,
@@ -165,11 +166,57 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 			mu.Unlock()
 		}(srv)
 	}
-
 	wg.Wait()
-
 	d.SetId("talos-installer")
 	d.Set("results", results)
+	return diags
+}
 
+func resourceBootInstallerUpdate(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	cfg := meta.(*client.HetznerRobotClient)
+	var diags diag.Diagnostics
+	if d.HasChange("servers") {
+		rawServers := d.Get("servers").([]interface{})
+		servers := expandServerList(rawServers)
+		for _, srv := range servers {
+			serverID, err := strconv.Atoi(srv.ID)
+			if err != nil {
+				diags = append(diags, diag.Errorf("invalid server ID %s: %v", srv.ID, err)...)
+				continue
+			}
+			serverInfo, err := cfg.FetchServerByID(serverID)
+			if err != nil {
+				diags = append(diags, diag.Errorf("failed to fetch server %d info: %v", serverID, err)...)
+				continue
+			}
+			if serverInfo.ServerName != srv.Name {
+				_, err = cfg.RenameServer(ctx, serverID, srv.Name)
+				if err != nil {
+					diags = append(diags, diag.Errorf("failed to rename server %d: %v", serverID, err)...)
+					continue
+				}
+			}
+		}
+	}
+	return diags
+}
+
+// -------------------- DELETE -------------------- //
+func resourceBootInstallerDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
+	cfg := meta.(*client.HetznerRobotClient)
+	rawServers := d.Get("servers").([]interface{})
+	servers := expandServerList(rawServers)
+	var diags diag.Diagnostics
+	for _, srv := range servers {
+		serverID, err := strconv.Atoi(srv.ID)
+		if err != nil {
+			diags = append(diags, diag.Errorf("invalid server ID %s: %v", srv.ID, err)...)
+			continue
+		}
+		_, err = cfg.ResetServer(ctx, serverID, "hw")
+		if err != nil {
+			diags = append(diags, diag.Errorf("failed to reset server %d on delete: %v", serverID, err)...)
+		}
+	}
 	return diags
 }

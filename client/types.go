@@ -20,7 +20,7 @@ type Server struct {
 	IP         string `json:"server_ip"`
 	IPv6Net    string `json:"server_ipv6_net"`
 	Number     int    `json:"server_number"`
-	Name       string `json:"server_name"`
+	ServerName string `json:"server_name"`
 	Product    string `json:"product"`
 	Datacenter string `json:"dc"`
 	Traffic    string `json:"traffic"`
@@ -64,7 +64,6 @@ type VSwitchCloudNet struct {
 	Gateway string `json:"gateway"`
 }
 
-// HetznerRobotFirewallResponse Firewall types
 type HetznerRobotFirewallResponse struct {
 	Firewall HetznerRobotFirewall `json:"firewall"`
 }
@@ -91,7 +90,6 @@ type HetznerRobotFirewallRule struct {
 	Action   string `json:"action"`
 }
 
-// HetznerResetResponse boot
 type HetznerResetResponse struct {
 	Reset struct {
 		Type string `json:"type"`

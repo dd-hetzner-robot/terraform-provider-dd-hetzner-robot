@@ -48,11 +48,9 @@ func Provider() *schema.Provider {
 
 func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}, diag.Diagnostics) {
 	var diags diag.Diagnostics
-
 	username := d.Get("username").(string)
 	password := d.Get("password").(string)
 	url := d.Get("url").(string)
-
 	if username == "" || password == "" {
 		diags = append(diags, diag.Diagnostic{
 			Severity: diag.Error,
@@ -61,13 +59,11 @@ func providerConfigure(ctx context.Context, d *schema.ResourceData) (interface{}
 		})
 		return nil, diags
 	}
-
 	config := &shared.ProviderConfig{
 		Username: username,
 		Password: password,
 		BaseURL:  url,
 	}
-
 	client := client.NewHetznerRobotClient(config)
 	return client, diags
 }

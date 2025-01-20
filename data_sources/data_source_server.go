@@ -7,7 +7,6 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-
 	"hcloud-robot-provider/client"
 )
 
@@ -47,13 +46,11 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 	if !ok {
 		return diag.Errorf("invalid client type")
 	}
-
 	rawIDs := d.Get("ids").([]interface{})
 	var ids []int
 	for _, v := range rawIDs {
 		ids = append(ids, v.(int))
 	}
-
 	var (
 		servers []client.Server
 		err     error
@@ -66,15 +63,13 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 	if err != nil {
 		return diag.FromErr(fmt.Errorf("failed to fetch servers: %w", err))
 	}
-
-	// Складываем данные в список
 	serverList := make([]map[string]interface{}, 0, len(servers))
 	for _, s := range servers {
 		serverList = append(serverList, map[string]interface{}{
 			"ip":         s.IP,
 			"ipv6_net":   s.IPv6Net,
 			"number":     s.Number,
-			"name":       s.Name,
+			"name":       s.ServerName,
 			"product":    s.Product,
 			"datacenter": s.Datacenter,
 			"traffic":    s.Traffic,
@@ -83,11 +78,9 @@ func dataSourceServersRead(ctx context.Context, d *schema.ResourceData, meta int
 			"paid_until": s.PaidUntil,
 		})
 	}
-
 	if err := d.Set("servers", serverList); err != nil {
 		return diag.FromErr(err)
 	}
-
 	idStr := "all"
 	if len(ids) > 0 {
 		idStr = strings.Join(intSliceToStringSlice(ids), "-")

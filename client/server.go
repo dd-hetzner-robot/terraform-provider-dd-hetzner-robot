@@ -15,25 +15,17 @@ func (c *HetznerRobotClient) FetchAllServers() ([]Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("FetchAllServers request error: %w", err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-
-		}
-	}(resp.Body)
-
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("FetchAllServers: status %d, body %s", resp.StatusCode, string(bodyBytes))
 	}
-
 	var raw []struct {
 		Server Server `json:"server"`
 	}
 	if err := json.NewDecoder(resp.Body).Decode(&raw); err != nil {
 		return nil, fmt.Errorf("FetchAllServers decode error: %w", err)
 	}
-
 	servers := make([]Server, len(raw))
 	for i, item := range raw {
 		servers[i] = item.Server
@@ -47,18 +39,11 @@ func (c *HetznerRobotClient) FetchServerByID(id int) (Server, error) {
 	if err != nil {
 		return Server{}, fmt.Errorf("FetchServerByID request error: %w", err)
 	}
-	defer func(Body io.ReadCloser) {
-		err := Body.Close()
-		if err != nil {
-
-		}
-	}(resp.Body)
-
+	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return Server{}, fmt.Errorf("FetchServerByID %d: status %d, body %s", id, resp.StatusCode, string(bodyBytes))
 	}
-
 	var result struct {
 		Server Server `json:"server"`
 	}
@@ -75,18 +60,14 @@ func (c *HetznerRobotClient) FetchServersByIDs(ids []int) ([]Server, error) {
 		wg      sync.WaitGroup
 		errs    []error
 	)
-
 	sem := make(chan struct{}, 10)
-
 	for _, id := range ids {
 		wg.Add(1)
 		go func(serverID int) {
 			defer wg.Done()
-
 			sem <- struct{}{}
 			srv, err := c.FetchServerByID(serverID)
 			<-sem
-
 			if err != nil {
 				mu.Lock()
 				errs = append(errs, err)
@@ -99,11 +80,9 @@ func (c *HetznerRobotClient) FetchServersByIDs(ids []int) ([]Server, error) {
 		}(id)
 	}
 	wg.Wait()
-
 	if len(errs) > 0 {
 		return nil, fmt.Errorf("FetchServersByIDs errors: %v", errs)
 	}
-
 	sort.Slice(servers, func(i, j int) bool {
 		return servers[i].Number < servers[j].Number
 	})

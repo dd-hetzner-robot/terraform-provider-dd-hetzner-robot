@@ -8,7 +8,6 @@ import (
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
-
 	"hcloud-robot-provider/client"
 )
 
@@ -26,22 +25,10 @@ func DataSourceVSwitches() *schema.Resource {
 				Computed: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"id": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"name": {
-							Type:     schema.TypeString,
-							Computed: true,
-						},
-						"vlan": {
-							Type:     schema.TypeInt,
-							Computed: true,
-						},
-						"cancelled": {
-							Type:     schema.TypeBool,
-							Computed: true,
-						},
+						"id":        {Type: schema.TypeString, Computed: true},
+						"name":      {Type: schema.TypeString, Computed: true},
+						"vlan":      {Type: schema.TypeInt, Computed: true},
+						"cancelled": {Type: schema.TypeBool, Computed: true},
 					},
 				},
 			},
@@ -58,18 +45,15 @@ func dataSourceVSwitchesRead(ctx context.Context, d *schema.ResourceData, meta i
 	if !ok {
 		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
 	}
-
 	idsInterface := d.Get("ids").([]interface{})
 	var ids []string
 	for _, id := range idsInterface {
 		ids = append(ids, id.(string))
 	}
-
 	var (
 		vswitches []client.VSwitch
 		err       error
 	)
-
 	if len(ids) == 0 {
 		vswitches, err = hClient.FetchAllVSwitches(ctx)
 		if err != nil {
@@ -81,7 +65,6 @@ func dataSourceVSwitchesRead(ctx context.Context, d *schema.ResourceData, meta i
 			return diag.FromErr(fmt.Errorf("error fetching vSwitches by IDs: %w", err))
 		}
 	}
-
 	if len(vswitches) == 0 {
 		d.SetId("No found")
 		placeholder := []map[string]interface{}{
@@ -97,11 +80,9 @@ func dataSourceVSwitchesRead(ctx context.Context, d *schema.ResourceData, meta i
 		}
 		return nil
 	}
-
 	if err := d.Set("vswitches", flattenVSwitches(vswitches)); err != nil {
 		return diag.FromErr(err)
 	}
-
 	idStr := "all"
 	if len(ids) > 0 {
 		idStr = strings.Join(ids, "-")
