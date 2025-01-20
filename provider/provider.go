@@ -16,23 +16,27 @@ func Provider() *schema.Provider {
 	return &schema.Provider{
 		Schema: map[string]*schema.Schema{
 			"username": {
-				Type:     schema.TypeString,
-				Required: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Description: "Hetzner Robot API username.",
 			},
 			"password": {
-				Type:      schema.TypeString,
-				Required:  true,
-				Sensitive: true,
+				Type:        schema.TypeString,
+				Required:    true,
+				Sensitive:   true,
+				Description: "Hetzner Robot API password.",
 			},
 			"url": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				DefaultFunc: schema.EnvDefaultFunc("HETZNERROBOT_URL", "https://robot-ws.your-server.de"),
+				Description: "Base URL for the Hetzner Robot API.",
 			},
 		},
 		ResourcesMap: map[string]*schema.Resource{
-			"hetznerrobot_vswitch":  resources.ResourceVSwitch(),
-			"hetznerrobot_firewall": resources.ResourceFirewall(),
+			"hetznerrobot_vswitch":    resources.ResourceVSwitch(),
+			"hetznerrobot_firewall":   resources.ResourceFirewall(),
+			"hetznerrobot_os_install": resources.ResourceBootInstaller(),
 		},
 		DataSourcesMap: map[string]*schema.Resource{
 			"hetznerrobot_server":  data_sources.DataSourceServers(),

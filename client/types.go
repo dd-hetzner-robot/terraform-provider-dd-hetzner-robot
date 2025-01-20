@@ -90,3 +90,30 @@ type HetznerRobotFirewallRule struct {
 	TCPFlags string `json:"tcp_flags"`
 	Action   string `json:"action"`
 }
+
+// HetznerResetResponse boot
+type HetznerResetResponse struct {
+	Reset struct {
+		ServerIP string `json:"server_ip"`
+		Type     string `json:"type"`
+	} `json:"reset"`
+}
+
+// HetznerRescueResponse - структура ответа для включения rescue режима
+type HetznerRescueResponse struct {
+	Rescue struct {
+		ServerIP  string `json:"server_ip"`
+		Password  string `json:"password"`
+		Active    bool   `json:"active"`
+		Os        string `json:"os"`
+		ServerNum int    `json:"server_number"`
+	} `json:"rescue"`
+}
+
+// HetznerRenameResponse - структура ответа для переименования сервера
+type HetznerRenameResponse struct {
+	Server struct {
+		ServerIP   string `json:"server_ip"`
+		ServerName string `json:"server_name"`
+	} `json:"server"`
+}
