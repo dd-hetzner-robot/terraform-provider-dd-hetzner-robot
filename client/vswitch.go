@@ -117,7 +117,7 @@ func (c *HetznerRobotClient) UpdateVSwitch(ctx context.Context, id, name string,
 	data := url.Values{}
 	data.Set("name", name)
 	data.Set("vlan", strconv.Itoa(vlan))
-	resp, err := c.DoRequest("PUT", fmt.Sprintf("/vswitch/%s", id), strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
+	resp, err := c.DoRequest("POST", fmt.Sprintf("/vswitch/%s", id), strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
 	if err != nil {
 		return fmt.Errorf("error updating VSwitch: %w", err)
 	}

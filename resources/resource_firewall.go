@@ -258,8 +258,9 @@ func resourceFirewallDelete(ctx context.Context, d *schema.ResourceData, m inter
 	status := "active"
 	rules := []client.HetznerRobotFirewallRule{
 		{
-			Name:   "Deny All",
-			Action: "discard",
+			Name:     "Allow all",
+			Action:   "accept",
+			Protocol: "null",
 		},
 	}
 	if err := hClient.SetFirewall(ctx, client.HetznerRobotFirewall{

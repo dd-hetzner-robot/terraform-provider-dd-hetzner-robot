@@ -26,7 +26,6 @@ func ResourceVSwitch() *schema.Resource {
 				Required:    true,
 				Description: "The name of the vSwitch.",
 			},
-			// Делаем vlan опциональным
 			"vlan": {
 				Type:        schema.TypeInt,
 				Optional:    true,
