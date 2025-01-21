@@ -94,7 +94,7 @@ func ResourceBootInstaller() *schema.Resource {
 							Type:     schema.TypeString,
 							Computed: true,
 						},
-						"password": {
+						"name": {
 							Type:     schema.TypeString,
 							Computed: true,
 						},
@@ -201,7 +201,6 @@ func resourceBootInstallerUpdate(ctx context.Context, d *schema.ResourceData, me
 	return diags
 }
 
-// -------------------- DELETE -------------------- //
 func resourceBootInstallerDelete(ctx context.Context, d *schema.ResourceData, meta interface{}) diag.Diagnostics {
 	cfg := meta.(*client.HetznerRobotClient)
 	rawServers := d.Get("servers").([]interface{})
