@@ -99,6 +99,15 @@ func resourceVSwitchRead(ctx context.Context, d *schema.ResourceData, meta inter
 		return diag.FromErr(fmt.Errorf("error reading vSwitch: %w", err))
 	}
 
+	storedVLAN, vlanExists := d.GetOk("vlan")
+	if vlanExists {
+		if storedVLAN.(int) != vsw.VLAN {
+			return diag.FromErr(fmt.Errorf(
+				"VLAN mismatch: state VLAN = %d, robot VLAN = %d", storedVLAN, vsw.VLAN,
+			))
+		}
+	}
+
 	_ = d.Set("name", vsw.Name)
 	_ = d.Set("vlan", vsw.VLAN)
 	_ = d.Set("is_cancelled", vsw.Cancelled)

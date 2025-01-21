@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
 	"golang.org/x/crypto/ssh"
 )
@@ -52,6 +54,23 @@ func (c *HetznerRobotClient) EnableRescueMode(ctx context.Context, serverID int,
 		return nil, fmt.Errorf("error parsing rescue response: %w", err)
 	}
 	return &rescueResp, nil
+}
+
+func (c *HetznerRobotClient) DisableRescueMode(ctx context.Context, serverID int) error {
+	endpoint := fmt.Sprintf("/boot/%d/rescue", serverID)
+	resp, err := c.DoRequest("DELETE", endpoint, nil, "")
+	if err != nil {
+		return fmt.Errorf("error disabling rescue mode for server %d: %w", serverID, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Printf("[DEBUG] Rescue mode disabled for server %d\n", serverID)
+	return nil
 }
 
 func (c *HetznerRobotClient) RenameServer(ctx context.Context, serverID int, newName string) (*HetznerRenameResponse, error) {
@@ -115,6 +134,48 @@ reboot
 	if err != nil {
 		return fmt.Errorf("failed to run Talos install script on %s: %s\nerror: %w", serverIP, string(output), err)
 	}
+	return nil
+}
+
+func (c *HetznerRobotClient) RebootServer(ctx context.Context, serverID int, resetType string) error {
+	endpoint := fmt.Sprintf("/reset/%d", serverID)
+	data := url.Values{}
+	data.Set("type", resetType)
+
+	resp, err := c.DoRequest("POST", endpoint, strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
+	if err != nil {
+		return fmt.Errorf("error rebooting server %d with reset type %s: %w", serverID, resetType, err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, string(body))
+	}
+
+	fmt.Printf("[DEBUG] Server %d reset with type: %s\n", serverID, resetType)
+
+	if resetType == "power" || resetType == "power_long" {
+		fmt.Printf("[DEBUG] Turning on server %d after %s reset\n", serverID, resetType)
+		time.Sleep(10 * time.Second)
+		powerEndpoint := fmt.Sprintf("/power/%d", serverID)
+		powerData := url.Values{}
+		powerData.Set("action", "on")
+
+		powerResp, err := c.DoRequest("POST", powerEndpoint, strings.NewReader(powerData.Encode()), "application/x-www-form-urlencoded")
+		if err != nil {
+			return fmt.Errorf("error turning on server %d after %s reset: %w", serverID, resetType, err)
+		}
+		defer powerResp.Body.Close()
+
+		if powerResp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(powerResp.Body)
+			return fmt.Errorf("unexpected status code %d when turning on server, body: %s", powerResp.StatusCode, string(body))
+		}
+
+		fmt.Printf("[DEBUG] Server %d successfully powered on\n", serverID)
+	}
+
 	return nil
 }
 

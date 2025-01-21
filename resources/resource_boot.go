@@ -2,6 +2,7 @@ package resources
 
 import (
 	"context"
+	"fmt"
 	"strconv"
 	"sync"
 	"time"
@@ -121,6 +122,7 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 		results []map[string]interface{}
 		diags   diag.Diagnostics
 	)
+
 	for _, srv := range servers {
 		wg.Add(1)
 		go func(srv ServerInput) {
@@ -132,6 +134,23 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				mu.Unlock()
 				return
 			}
+
+			if err := cfg.DisableRescueMode(ctx, serverID); err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("failed to disable rescue mode for server %d: %v", serverID, err)...)
+				mu.Unlock()
+				return
+			}
+
+			if err := cfg.RebootServer(ctx, serverID, "hw"); err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("failed to reboot server %d: %v", serverID, err)...)
+				mu.Unlock()
+				return
+			}
+
+			time.Sleep(40 * time.Second)
+
 			_, err = cfg.RenameServer(ctx, serverID, srv.Name)
 			if err != nil {
 				mu.Lock()
@@ -139,6 +158,7 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				mu.Unlock()
 				return
 			}
+
 			rescueResp, err := cfg.EnableRescueMode(ctx, serverID, rescueOS, sshKeys)
 			if err != nil {
 				mu.Lock()
@@ -146,17 +166,30 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				mu.Unlock()
 				return
 			}
-			cfg.ResetServer(ctx, serverID, "hw")
-			time.Sleep(10 * time.Second)
-			cfg.ResetServer(ctx, serverID, "hw")
+
+			if err := cfg.RebootServer(ctx, serverID, "power"); err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("failed to reboot server %d with power reset: %v", serverID, err)...)
+				mu.Unlock()
+				return
+			}
+
+			time.Sleep(30 * time.Second)
+
 			ip := rescueResp.Rescue.ServerIP
 			pass := rescueResp.Rescue.Password
+
+			mu.Lock()
+			fmt.Printf("[DEBUG] Connecting to server %s with password: %s\n", ip, pass)
+			mu.Unlock()
+
 			if err := cfg.InstallTalosOS(ctx, ip, pass); err != nil {
 				mu.Lock()
 				diags = append(diags, diag.Errorf("failed to install Talos OS on server %d: %v", serverID, err)...)
 				mu.Unlock()
 				return
 			}
+
 			mu.Lock()
 			results = append(results, map[string]interface{}{
 				"id":       srv.ID,
