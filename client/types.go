@@ -39,7 +39,7 @@ type VSwitch struct {
 	Name      string            `json:"name"`
 	VLAN      int               `json:"vlan"`
 	Cancelled bool              `json:"cancelled"`
-	Servers   []VSwitchServer   `json:"servers"`
+	Servers   []VSwitchServer   `json:"server"`
 	Subnets   []VSwitchSubnet   `json:"subnets"`
 	CloudNets []VSwitchCloudNet `json:"cloud_networks"`
 }

@@ -20,13 +20,15 @@ func (c *HetznerRobotClient) FetchVSwitchByIDWithContext(ctx context.Context, id
 		return nil, fmt.Errorf("error fetching VSwitch: %w", err)
 	}
 	defer resp.Body.Close()
+
 	if resp.StatusCode == http.StatusNotFound {
-		return nil, fmt.Errorf("VSwitch with ID %s not found", id)
+		return nil, nil
 	}
 	if resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("error fetching VSwitch: status %d, body %s", resp.StatusCode, string(bodyBytes))
 	}
+
 	var vswitch VSwitch
 	if err := json.NewDecoder(resp.Body).Decode(&vswitch); err != nil {
 		return nil, fmt.Errorf("error decoding VSwitch response: %w", err)
@@ -113,19 +115,44 @@ func (c *HetznerRobotClient) CreateVSwitch(ctx context.Context, name string, vla
 	return &vswitch, nil
 }
 
-func (c *HetznerRobotClient) UpdateVSwitch(ctx context.Context, id, name string, vlan int) error {
+func (c *HetznerRobotClient) UpdateVSwitch(ctx context.Context, id, name string, vlan int, oldVlan int) error {
 	data := url.Values{}
 	data.Set("name", name)
-	data.Set("vlan", strconv.Itoa(vlan))
+
+	if vlan != oldVlan {
+		data.Set("vlan", strconv.Itoa(vlan))
+		fmt.Printf("[INFO] VLAN changed, including in update request: %d -> %d\n", oldVlan, vlan)
+	} else {
+		fmt.Printf("[INFO] VLAN has not changed, sending only name update\n")
+	}
+
 	resp, err := c.DoRequest("POST", fmt.Sprintf("/vswitch/%s", id), strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
 	if err != nil {
 		return fmt.Errorf("error updating VSwitch: %w", err)
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
+
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("error updating VSwitch: status %d, body %s", resp.StatusCode, string(bodyBytes))
+		bodyStr := string(bodyBytes)
+
+		switch resp.StatusCode {
+		case http.StatusBadRequest:
+			return fmt.Errorf("error updating VSwitch: INVALID_INPUT - %s", bodyStr)
+		case http.StatusNotFound:
+			return fmt.Errorf("error updating VSwitch: NOT_FOUND - %s", bodyStr)
+		case http.StatusConflict:
+			if strings.Contains(bodyStr, "VSWITCH_IN_PROCESS") {
+				return fmt.Errorf("error updating VSwitch: VSWITCH_IN_PROCESS - %s", bodyStr)
+			}
+			if strings.Contains(bodyStr, "VSWITCH_VLAN_NOT_UNIQUE") {
+				return fmt.Errorf("error updating VSwitch: VSWITCH_VLAN_NOT_UNIQUE - %s", bodyStr)
+			}
+		default:
+			return fmt.Errorf("error updating VSwitch: status %d, body %s", resp.StatusCode, bodyStr)
+		}
 	}
+
 	return nil
 }
 
@@ -136,7 +163,12 @@ func (c *HetznerRobotClient) DeleteVSwitch(ctx context.Context, id string, cance
 	if err != nil {
 		return fmt.Errorf("error deleting VSwitch: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 	if resp.StatusCode != http.StatusNoContent && resp.StatusCode != http.StatusOK {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("error deleting VSwitch: status %d, body %s", resp.StatusCode, string(bodyBytes))
@@ -153,7 +185,12 @@ func (c *HetznerRobotClient) AddVSwitchServers(ctx context.Context, id string, s
 	if err != nil {
 		return fmt.Errorf("error adding servers to VSwitch: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+
+		}
+	}(resp.Body)
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusCreated {
 		bodyBytes, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("error adding servers to VSwitch: status %d, body %s", resp.StatusCode, string(bodyBytes))
@@ -164,7 +201,7 @@ func (c *HetznerRobotClient) AddVSwitchServers(ctx context.Context, id string, s
 func (c *HetznerRobotClient) RemoveVSwitchServers(ctx context.Context, id string, servers []VSwitchServer) error {
 	data := url.Values{}
 	for _, server := range servers {
-		data.Add("server_number", strconv.Itoa(server.ServerNumber))
+		data.Add("server[]", strconv.Itoa(server.ServerNumber))
 	}
 	resp, err := c.DoRequest("DELETE", fmt.Sprintf("/vswitch/%s/server", id), strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
 	if err != nil {
@@ -190,4 +227,40 @@ func (c *HetznerRobotClient) SetVSwitchCancellation(ctx context.Context, id, can
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
 	return nil
+}
+
+func (c *HetznerRobotClient) WaitForVSwitchReady(ctx context.Context, id string, timeoutSeconds, pollIntervalSeconds int) error {
+	startTime := time.Now()
+
+	for {
+		vsw, err := c.FetchVSwitchByIDWithContext(ctx, id)
+		if err != nil {
+			return fmt.Errorf("error fetching VSwitch while waiting: %w", err)
+		}
+
+		if vsw == nil {
+			return fmt.Errorf("vSwitch with ID %s not found", id)
+		}
+
+		allReady := true
+		for _, server := range vsw.Servers {
+			fmt.Printf("[INFO] Checking server %d status: %s\n", server.ServerNumber, server.Status)
+			if server.Status == "processing" {
+				allReady = false
+				break
+			}
+		}
+
+		if allReady {
+			fmt.Println("[INFO] vSwitch is now ready.")
+			return nil
+		}
+
+		if time.Since(startTime).Seconds() > float64(timeoutSeconds) {
+			return fmt.Errorf("timeout waiting for vSwitch %s to become ready", id)
+		}
+
+		fmt.Printf("[INFO] vSwitch is still processing, retrying in %d seconds...\n", pollIntervalSeconds)
+		time.Sleep(time.Duration(pollIntervalSeconds) * time.Second)
+	}
 }
