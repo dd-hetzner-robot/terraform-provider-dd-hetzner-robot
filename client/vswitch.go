@@ -121,9 +121,9 @@ func (c *HetznerRobotClient) UpdateVSwitch(ctx context.Context, id, name string,
 
 	if vlan != oldVlan {
 		data.Set("vlan", strconv.Itoa(vlan))
-		fmt.Printf("[INFO] VLAN changed, including in update request: %d -> %d\n", oldVlan, vlan)
+		fmt.Printf("VLAN changed, including in update request: %d -> %d\n", oldVlan, vlan)
 	} else {
-		fmt.Printf("[INFO] VLAN has not changed, sending only name update\n")
+		fmt.Printf("VLAN has not changed, sending only name update\n")
 	}
 
 	resp, err := c.DoRequest("POST", fmt.Sprintf("/vswitch/%s", id), strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
@@ -229,10 +229,8 @@ func (c *HetznerRobotClient) SetVSwitchCancellation(ctx context.Context, id, can
 	return nil
 }
 
-func (c *HetznerRobotClient) WaitForVSwitchReady(ctx context.Context, id string, timeoutSeconds, pollIntervalSeconds int) error {
-	startTime := time.Now()
-
-	for {
+func (c *HetznerRobotClient) WaitForVSwitchReady(ctx context.Context, id string, maxRetries int, waitTime time.Duration) error {
+	for i := 0; i < maxRetries; i++ {
 		vsw, err := c.FetchVSwitchByIDWithContext(ctx, id)
 		if err != nil {
 			return fmt.Errorf("error fetching VSwitch while waiting: %w", err)
@@ -244,7 +242,7 @@ func (c *HetznerRobotClient) WaitForVSwitchReady(ctx context.Context, id string,
 
 		allReady := true
 		for _, server := range vsw.Servers {
-			fmt.Printf("[INFO] Checking server %d status: %s\n", server.ServerNumber, server.Status)
+			fmt.Printf("Checking server %d status: %s\n", server.ServerNumber, server.Status)
 			if server.Status == "processing" {
 				allReady = false
 				break
@@ -252,15 +250,13 @@ func (c *HetznerRobotClient) WaitForVSwitchReady(ctx context.Context, id string,
 		}
 
 		if allReady {
-			fmt.Println("[INFO] vSwitch is now ready.")
+			fmt.Println("vSwitch is now ready.")
 			return nil
 		}
 
-		if time.Since(startTime).Seconds() > float64(timeoutSeconds) {
-			return fmt.Errorf("timeout waiting for vSwitch %s to become ready", id)
-		}
-
-		fmt.Printf("[INFO] vSwitch is still processing, retrying in %d seconds...\n", pollIntervalSeconds)
-		time.Sleep(time.Duration(pollIntervalSeconds) * time.Second)
+		fmt.Printf("vSwitch is still processing, retrying in %v seconds (%d/%d)...\n", waitTime.Seconds(), i+1, maxRetries)
+		time.Sleep(waitTime)
 	}
+
+	return fmt.Errorf("timeout waiting for vSwitch %s to become ready", id)
 }

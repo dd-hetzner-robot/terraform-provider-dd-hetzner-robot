@@ -76,7 +76,6 @@ func (c *HetznerRobotClient) SetFirewall(ctx context.Context, firewall HetznerRo
 		return fmt.Errorf("unexpected response status: %d", resp.StatusCode)
 	}
 
-	// Ожидание активации фаервола с параметрами maxRetries и waitTime
 	return c.waitForFirewallActive(ctx, firewall.IP, maxRetries, waitTime)
 }
 

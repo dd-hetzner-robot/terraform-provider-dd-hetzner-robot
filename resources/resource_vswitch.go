@@ -137,11 +137,17 @@ func resourceVSwitchUpdate(ctx context.Context, d *schema.ResourceData, meta int
 	name := d.Get("name").(string)
 	vlan := d.Get("vlan").(int)
 
+	var waitForReady bool
+
 	if d.HasChange("name") || d.HasChange("vlan") {
 		oldVlan, _ := d.GetChange("vlan")
 
 		if err := c.UpdateVSwitch(ctx, id, name, vlan, oldVlan.(int)); err != nil {
 			return diag.FromErr(fmt.Errorf("error updating vSwitch: %w", err))
+		}
+
+		if vlan != oldVlan.(int) {
+			waitForReady = true
 		}
 	}
 
@@ -166,8 +172,12 @@ func resourceVSwitchUpdate(ctx context.Context, d *schema.ResourceData, meta int
 			}
 		}
 
-		if err := c.WaitForVSwitchReady(ctx, id, 240, 30); err != nil {
-			return diag.FromErr(fmt.Errorf("error waiting for vSwitch readiness after server update: %w", err))
+		waitForReady = true
+	}
+
+	if waitForReady {
+		if err := c.WaitForVSwitchReady(ctx, id, 20, 15*time.Second); err != nil {
+			return diag.FromErr(fmt.Errorf("error waiting for vSwitch readiness after update: %w", err))
 		}
 	}
 
