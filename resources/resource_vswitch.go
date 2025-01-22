@@ -39,7 +39,7 @@ func ResourceVSwitch() *schema.Resource {
 				Description: "List of server IDs to connect to the vSwitch.",
 				Elem:        &schema.Schema{Type: schema.TypeInt},
 			},
-			"is_cancelled": {
+			"cancellation_date": {
 				Type:        schema.TypeString,
 				Optional:    true,
 				Description: "The cancellation date for the vSwitch. If not provided, defaults to 'now'.",
@@ -110,7 +110,7 @@ func resourceVSwitchRead(ctx context.Context, d *schema.ResourceData, meta inter
 
 	_ = d.Set("name", vsw.Name)
 	_ = d.Set("vlan", vsw.VLAN)
-	_ = d.Set("is_cancelled", vsw.Cancelled)
+	_ = d.Set("cancellation_date", vsw.Cancelled)
 
 	servers := flattenServers(vsw.Servers)
 	sort.Ints(servers)
@@ -178,7 +178,7 @@ func resourceVSwitchDelete(ctx context.Context, d *schema.ResourceData, meta int
 	c := meta.(*client.HetznerRobotClient)
 	id := d.Id()
 
-	cancellationDate := d.Get("is_cancelled").(string)
+	cancellationDate := d.Get("cancellation_date").(string)
 	if cancellationDate == "" {
 		cancellationDate = "now"
 	}

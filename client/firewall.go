@@ -4,9 +4,9 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
 	"net/url"
 	"strings"
+	"time"
 )
 
 func (c *HetznerRobotClient) GetFirewall(ctx context.Context, ip string) (*HetznerRobotFirewall, error) {
@@ -17,7 +17,7 @@ func (c *HetznerRobotClient) GetFirewall(ctx context.Context, ip string) (*Hetzn
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		return nil, fmt.Errorf("unexpected response status: %d", resp.StatusCode)
 	}
 
@@ -29,7 +29,7 @@ func (c *HetznerRobotClient) GetFirewall(ctx context.Context, ip string) (*Hetzn
 	return &fwResp.Firewall, nil
 }
 
-func (c *HetznerRobotClient) SetFirewall(ctx context.Context, firewall HetznerRobotFirewall) error {
+func (c *HetznerRobotClient) SetFirewall(ctx context.Context, firewall HetznerRobotFirewall, maxRetries int, waitTime time.Duration) error {
 	path := fmt.Sprintf("/firewall/%s", firewall.IP)
 	whitelistHOS := "false"
 	if firewall.WhitelistHetznerServices {
@@ -72,9 +72,29 @@ func (c *HetznerRobotClient) SetFirewall(ctx context.Context, firewall HetznerRo
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusAccepted {
+	if resp.StatusCode != 200 && resp.StatusCode != 202 {
 		return fmt.Errorf("unexpected response status: %d", resp.StatusCode)
 	}
 
-	return nil
+	// Ожидание активации фаервола с параметрами maxRetries и waitTime
+	return c.waitForFirewallActive(ctx, firewall.IP, maxRetries, waitTime)
+}
+
+func (c *HetznerRobotClient) waitForFirewallActive(ctx context.Context, ip string, maxRetries int, waitTime time.Duration) error {
+	for i := 0; i < maxRetries; i++ {
+		firewall, err := c.GetFirewall(ctx, ip)
+		if err != nil {
+			return fmt.Errorf("error checking firewall status: %w", err)
+		}
+
+		if firewall.Status == "active" {
+			fmt.Println("Firewall is now active.")
+			return nil
+		}
+
+		fmt.Printf("Waiting for firewall to become active... (%d/%d)\n", i+1, maxRetries)
+		time.Sleep(waitTime)
+	}
+
+	return fmt.Errorf("timeout waiting for firewall to become active")
 }

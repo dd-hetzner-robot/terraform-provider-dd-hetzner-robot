@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
@@ -42,45 +43,17 @@ func ResourceFirewall() *schema.Resource {
 				Required: true,
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
-						"name": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Name of the firewall rule.",
-						},
-						"dst_ip": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Destination IP address.",
-						},
-						"dst_port": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Destination port.",
-						},
-						"src_ip": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Source IP address.",
-						},
-						"src_port": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Source port.",
-						},
-						"protocol": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "Protocol (e.g., tcp, udp).",
-						},
-						"tcp_flags": {
-							Type:        schema.TypeString,
-							Optional:    true,
-							Description: "TCP flags.",
-						},
+						"name":      {Type: schema.TypeString, Optional: true, Description: "Name of the firewall rule."},
+						"dst_ip":    {Type: schema.TypeString, Optional: true, Description: "Destination IP address."},
+						"dst_port":  {Type: schema.TypeString, Optional: true, Description: "Destination port."},
+						"src_ip":    {Type: schema.TypeString, Optional: true, Description: "Source IP address."},
+						"src_port":  {Type: schema.TypeString, Optional: true, Description: "Source port."},
+						"protocol":  {Type: schema.TypeString, Optional: true, Description: "Protocol (e.g., tcp, udp)."},
+						"tcp_flags": {Type: schema.TypeString, Optional: true, Description: "TCP flags."},
 						"action": {
 							Type:             schema.TypeString,
-							ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"accept", "discard"}, false)),
 							Required:         true,
+							ValidateDiagFunc: validation.ToDiagFunc(validation.StringInSlice([]string{"accept", "discard"}, false)),
 							Description:      "Action to take (accept or discard).",
 						},
 					},
@@ -90,205 +63,174 @@ func ResourceFirewall() *schema.Resource {
 	}
 }
 
-func resourceFirewallImportState(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
-	hClient, ok := m.(*client.HetznerRobotClient)
-	if !ok {
-		return nil, fmt.Errorf("meta is not of type *client.HetznerRobotClient")
-	}
-	serverID := d.Id()
-	serverIDInt, err := strconv.Atoi(serverID)
-	if err != nil {
-		return nil, fmt.Errorf("invalid server_id %s: %w", serverID, err)
-	}
-	server, err := hClient.FetchServerByID(serverIDInt)
-	if err != nil {
-		return nil, fmt.Errorf("error fetching server by ID %s: %w", serverID, err)
-	}
-	serverIP := server.IP
-	firewall, err := hClient.GetFirewall(ctx, serverIP)
-	if err != nil {
-		return nil, fmt.Errorf("could not find firewall for server ID %s: %w", serverID, err)
-	}
-	active := firewall.Status == "active"
-	rules := make([]map[string]interface{}, 0, len(firewall.Rules.Input))
-	for _, rule := range firewall.Rules.Input {
-		r := map[string]interface{}{
-			"name":      rule.Name,
-			"src_ip":    rule.SrcIP,
-			"src_port":  rule.SrcPort,
-			"dst_ip":    rule.DstIP,
-			"dst_port":  rule.DstPort,
-			"protocol":  rule.Protocol,
-			"tcp_flags": rule.TCPFlags,
-			"action":    rule.Action,
-		}
-		rules = append(rules, r)
-	}
-	d.Set("active", active)
-	d.Set("rule", rules)
-	d.Set("whitelist_hos", firewall.WhitelistHetznerServices)
-	d.Set("server_id", serverID)
-	d.SetId(serverID)
-	return []*schema.ResourceData{d}, nil
-}
-
 func resourceFirewallCreate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-	hClient, ok := m.(*client.HetznerRobotClient)
-	if !ok {
-		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
-	}
+	hClient := m.(*client.HetznerRobotClient)
 	serverID := d.Get("server_id").(string)
 	serverIDInt, err := strconv.Atoi(serverID)
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("invalid server_id %s: %w", serverID, err))
+		return diag.FromErr(fmt.Errorf("invalid server ID: %w", err))
 	}
+
 	server, err := hClient.FetchServerByID(serverIDInt)
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("error fetching server by ID %s: %w", serverID, err))
+		return diag.FromErr(fmt.Errorf("error fetching server: %w", err))
 	}
-	serverIP := server.IP
+
 	status := "disabled"
 	if d.Get("active").(bool) {
 		status = "active"
 	}
+
 	rules := buildFirewallRules(d.Get("rule").([]interface{}))
-	if err := hClient.SetFirewall(ctx, client.HetznerRobotFirewall{
-		IP:                       serverIP,
+
+	err = hClient.SetFirewall(ctx, client.HetznerRobotFirewall{
+		IP:                       server.IP,
 		WhitelistHetznerServices: d.Get("whitelist_hos").(bool),
 		Status:                   status,
 		Rules:                    client.HetznerRobotFirewallRules{Input: rules},
-	}); err != nil {
+	}, 20, 15*time.Second)
+
+	if err != nil {
 		return diag.FromErr(err)
 	}
+
 	d.SetId(serverID)
-	return diags
+	return resourceFirewallRead(ctx, d, m)
 }
 
 func resourceFirewallRead(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-	hClient, ok := m.(*client.HetznerRobotClient)
-	if !ok {
-		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
-	}
+	hClient := m.(*client.HetznerRobotClient)
 	serverID := d.Get("server_id").(string)
+
 	serverIDInt, err := strconv.Atoi(serverID)
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("invalid server_id %s: %w", serverID, err))
+		return diag.FromErr(fmt.Errorf("invalid server ID: %w", err))
 	}
+
 	server, err := hClient.FetchServerByID(serverIDInt)
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("error fetching server by ID %s: %w", serverID, err))
+		return diag.FromErr(fmt.Errorf("error fetching server: %w", err))
 	}
-	serverIP := server.IP
-	firewall, err := hClient.GetFirewall(ctx, serverIP)
+
+	firewall, err := hClient.GetFirewall(ctx, server.IP)
 	if err != nil {
 		return diag.FromErr(err)
 	}
-	active := firewall.Status == "active"
-	rules := make([]map[string]interface{}, 0, len(firewall.Rules.Input))
-	for _, rule := range firewall.Rules.Input {
-		r := map[string]interface{}{
-			"name":      rule.Name,
-			"src_ip":    rule.SrcIP,
-			"src_port":  rule.SrcPort,
-			"dst_ip":    rule.DstIP,
-			"dst_port":  rule.DstPort,
-			"protocol":  rule.Protocol,
-			"tcp_flags": rule.TCPFlags,
-			"action":    rule.Action,
-		}
-		rules = append(rules, r)
-	}
-	d.Set("active", active)
-	d.Set("rule", rules)
+
+	d.Set("active", firewall.Status == "active")
 	d.Set("whitelist_hos", firewall.WhitelistHetznerServices)
-	d.Set("server_id", serverID)
-	return diags
+	d.Set("rule", flattenFirewallRules(firewall.Rules.Input))
+
+	return nil
 }
 
 func resourceFirewallUpdate(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-	hClient, ok := m.(*client.HetznerRobotClient)
-	if !ok {
-		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
-	}
-	serverID := d.Get("server_id").(string)
-	serverIDInt, err := strconv.Atoi(serverID)
-	if err != nil {
-		return diag.FromErr(fmt.Errorf("invalid server_id %s: %w", serverID, err))
-	}
-	server, err := hClient.FetchServerByID(serverIDInt)
-	if err != nil {
-		return diag.FromErr(fmt.Errorf("error fetching server by ID %s: %w", serverID, err))
-	}
-	serverIP := server.IP
-	status := "disabled"
-	if d.Get("active").(bool) {
-		status = "active"
-	}
-	rules := buildFirewallRules(d.Get("rule").([]interface{}))
-	if err := hClient.SetFirewall(ctx, client.HetznerRobotFirewall{
-		IP:                       serverIP,
-		WhitelistHetznerServices: d.Get("whitelist_hos").(bool),
-		Status:                   status,
-		Rules:                    client.HetznerRobotFirewallRules{Input: rules},
-	}); err != nil {
-		return diag.FromErr(err)
-	}
-	return diags
+	return resourceFirewallCreate(ctx, d, m)
 }
 
 func resourceFirewallDelete(ctx context.Context, d *schema.ResourceData, m interface{}) diag.Diagnostics {
-	var diags diag.Diagnostics
-	hClient, ok := m.(*client.HetznerRobotClient)
-	if !ok {
-		return diag.Errorf("meta is not of type *client.HetznerRobotClient")
-	}
+	hClient := m.(*client.HetznerRobotClient)
 	serverID := d.Get("server_id").(string)
+
 	serverIDInt, err := strconv.Atoi(serverID)
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("invalid server_id %s: %w", serverID, err))
+		return diag.FromErr(fmt.Errorf("invalid server ID: %w", err))
 	}
+
 	server, err := hClient.FetchServerByID(serverIDInt)
 	if err != nil {
-		return diag.FromErr(fmt.Errorf("error fetching server by ID %s: %w", serverID, err))
+		return diag.FromErr(fmt.Errorf("error fetching server: %w", err))
 	}
-	serverIP := server.IP
-	status := "active"
-	rules := []client.HetznerRobotFirewallRule{
-		{
-			Name:     "Allow all",
-			Action:   "accept",
-			Protocol: "null",
-		},
-	}
-	if err := hClient.SetFirewall(ctx, client.HetznerRobotFirewall{
-		IP:                       serverIP,
+
+	// Установка правила, разрешающего весь трафик
+	err = hClient.SetFirewall(ctx, client.HetznerRobotFirewall{
+		IP:                       server.IP,
 		WhitelistHetznerServices: false,
-		Status:                   status,
-		Rules:                    client.HetznerRobotFirewallRules{Input: rules},
-	}); err != nil {
-		return diag.FromErr(fmt.Errorf("error updating firewall for server %s: %w", serverID, err))
+		Status:                   "active",
+		Rules: client.HetznerRobotFirewallRules{
+			Input: []client.HetznerRobotFirewallRule{
+				{
+					Name:     "Allow all",
+					Protocol: "",
+					DstIP:    "",
+					SrcIP:    "",
+					DstPort:  "",
+					SrcPort:  "",
+					TCPFlags: "",
+					Action:   "accept",
+				},
+			},
+		},
+	}, 20, 15*time.Second)
+
+	if err != nil {
+		return diag.FromErr(fmt.Errorf("error setting firewall to allow all: %w", err))
 	}
+
 	d.SetId("")
-	return diags
+	return nil
 }
 
+func resourceFirewallImportState(ctx context.Context, d *schema.ResourceData, m interface{}) ([]*schema.ResourceData, error) {
+	hClient := m.(*client.HetznerRobotClient)
+	serverID := d.Id()
+
+	serverIDInt, err := strconv.Atoi(serverID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid server ID: %w", err)
+	}
+
+	server, err := hClient.FetchServerByID(serverIDInt)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching server: %w", err)
+	}
+
+	firewall, err := hClient.GetFirewall(ctx, server.IP)
+	if err != nil {
+		return nil, fmt.Errorf("could not find firewall for server ID %s: %w", serverID, err)
+	}
+
+	d.Set("active", firewall.Status == "active")
+	d.Set("whitelist_hos", firewall.WhitelistHetznerServices)
+	d.Set("rule", flattenFirewallRules(firewall.Rules.Input))
+	d.Set("server_id", serverID)
+	d.SetId(serverID)
+
+	return []*schema.ResourceData{d}, nil
+}
+
+// Helper functions
 func buildFirewallRules(ruleList []interface{}) []client.HetznerRobotFirewallRule {
-	rules := make([]client.HetznerRobotFirewallRule, 0, len(ruleList))
+	var rules []client.HetznerRobotFirewallRule
 	for _, ruleMap := range ruleList {
 		ruleProps := ruleMap.(map[string]interface{})
 		rules = append(rules, client.HetznerRobotFirewallRule{
 			Name:     ruleProps["name"].(string),
-			SrcIP:    ruleProps["src_ip"].(string),
-			SrcPort:  ruleProps["src_port"].(string),
 			DstIP:    ruleProps["dst_ip"].(string),
 			DstPort:  ruleProps["dst_port"].(string),
+			SrcIP:    ruleProps["src_ip"].(string),
+			SrcPort:  ruleProps["src_port"].(string),
 			Protocol: ruleProps["protocol"].(string),
 			TCPFlags: ruleProps["tcp_flags"].(string),
 			Action:   ruleProps["action"].(string),
 		})
 	}
 	return rules
+}
+
+func flattenFirewallRules(rules []client.HetznerRobotFirewallRule) []map[string]interface{} {
+	var result []map[string]interface{}
+	for _, rule := range rules {
+		result = append(result, map[string]interface{}{
+			"name":      rule.Name,
+			"dst_ip":    rule.DstIP,
+			"dst_port":  rule.DstPort,
+			"src_ip":    rule.SrcIP,
+			"src_port":  rule.SrcPort,
+			"protocol":  rule.Protocol,
+			"tcp_flags": rule.TCPFlags,
+			"action":    rule.Action,
+		})
+	}
+	return result
 }
