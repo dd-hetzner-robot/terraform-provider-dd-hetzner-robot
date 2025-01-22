@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
@@ -100,8 +101,8 @@ func resourceVSwitchRead(ctx context.Context, d *schema.ResourceData, meta inter
 
 	vsw, err := c.FetchVSwitchByIDWithContext(ctx, id)
 	if err != nil {
-		if c.IsNotFoundError(err) {
-			fmt.Printf("[INFO] vSwitch with ID %s not found, marking for recreation\n", id)
+		if strings.Contains(err.Error(), "not found") {
+			fmt.Printf("vSwitch with ID %s not found, marking for recreation\n", id)
 			d.SetId("")
 			return nil
 		}
