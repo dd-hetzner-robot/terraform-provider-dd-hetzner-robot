@@ -3,13 +3,13 @@ package resources
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"sync"
-	"time"
-
 	"github.com/hashicorp/terraform-plugin-sdk/v2/diag"
 	"github.com/hashicorp/terraform-plugin-sdk/v2/helper/schema"
 	"hcloud-robot-provider/client"
+	"net"
+	"strconv"
+	"sync"
+	"time"
 )
 
 type ServerInput struct {
@@ -149,7 +149,7 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				return
 			}
 
-			time.Sleep(40 * time.Second)
+			time.Sleep(30 * time.Second)
 
 			_, err = cfg.RenameServer(ctx, serverID, srv.Name)
 			if err != nil {
@@ -174,14 +174,19 @@ func resourceBootInstallerCreate(ctx context.Context, d *schema.ResourceData, me
 				return
 			}
 
-			time.Sleep(30 * time.Second)
-
 			ip := rescueResp.Rescue.ServerIP
 			pass := rescueResp.Rescue.Password
 
 			mu.Lock()
-			fmt.Printf("[DEBUG] Connecting to server %s with password: %s\n", ip, pass)
+			fmt.Printf("Connecting to server %s with password: %s\n", ip, pass)
 			mu.Unlock()
+
+			if err := waitForSSH(ip, 3*time.Minute, 10*time.Second); err != nil {
+				mu.Lock()
+				diags = append(diags, diag.Errorf("SSH not available on server %d: %v", serverID, err)...)
+				mu.Unlock()
+				return
+			}
 
 			if err := cfg.InstallTalosOS(ctx, ip, pass); err != nil {
 				mu.Lock()
@@ -251,4 +256,19 @@ func resourceBootInstallerDelete(ctx context.Context, d *schema.ResourceData, me
 		}
 	}
 	return diags
+}
+
+func waitForSSH(ip string, timeout time.Duration, interval time.Duration) error {
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:22", ip), 5*time.Second)
+		if err == nil {
+			conn.Close()
+			fmt.Printf("[INFO] SSH доступен на сервере %s\n", ip)
+			return nil
+		}
+		fmt.Printf("[WARN] Ожидание SSH на %s... Повторная попытка через %v секунд\n", ip, interval.Seconds())
+		time.Sleep(interval)
+	}
+	return fmt.Errorf("SSH недоступен на %s после %v", ip, timeout)
 }

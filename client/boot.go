@@ -21,7 +21,11 @@ func (c *HetznerRobotClient) ResetServer(ctx context.Context, serverID int, rese
 	if err != nil {
 		return nil, fmt.Errorf("error resetting server %d with type %s: %w", serverID, resetType, err)
 	}
-	defer resp.Body.Close()
+	defer func(Body io.ReadCloser) {
+		err := Body.Close()
+		if err != nil {
+		}
+	}(resp.Body)
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		return nil, fmt.Errorf("unexpected status code %d, body: %s", resp.StatusCode, string(body))
@@ -108,7 +112,11 @@ func (c *HetznerRobotClient) InstallTalosOS(ctx context.Context, serverIP, passw
 	if err != nil {
 		return fmt.Errorf("failed to create SSH session: %w", err)
 	}
-	defer session.Close()
+	defer func(session *ssh.Session) {
+		err := session.Close()
+		if err != nil {
+		}
+	}(session)
 	script := `#!/usr/bin/env bash
 set -eux
 
@@ -156,13 +164,12 @@ func (c *HetznerRobotClient) RebootServer(ctx context.Context, serverID int, res
 	fmt.Printf("[DEBUG] Server %d reset with type: %s\n", serverID, resetType)
 
 	if resetType == "power" || resetType == "power_long" {
-		fmt.Printf("[DEBUG] Turning on server %d after %s reset\n", serverID, resetType)
-		time.Sleep(10 * time.Second)
-		powerEndpoint := fmt.Sprintf("/power/%d", serverID)
+		time.Sleep(30 * time.Second)
+		fmt.Printf("Turning on server %d after %s reset\n", serverID, resetType)
 		powerData := url.Values{}
 		powerData.Set("action", "on")
 
-		powerResp, err := c.DoRequest("POST", powerEndpoint, strings.NewReader(powerData.Encode()), "application/x-www-form-urlencoded")
+		powerResp, err := c.DoRequest("POST", endpoint, strings.NewReader(data.Encode()), "application/x-www-form-urlencoded")
 		if err != nil {
 			return fmt.Errorf("error turning on server %d after %s reset: %w", serverID, resetType, err)
 		}
